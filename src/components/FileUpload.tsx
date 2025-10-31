@@ -74,12 +74,21 @@ export const FileUpload = ({ onUploadComplete }: { onUploadComplete?: () => void
       });
 
       onUploadComplete?.();
-    } catch (error) {
-      console.error('Upload error:', error);
-      toast.error('Upload failed', {
-        description: error instanceof Error ? error.message : 'Unknown error',
+    } catch (error: any) {
+      console.error("Upload error:", error);
+    
+      // Check if it’s a Solana error
+      if (error?.transactionLogs) {
+        console.group("🔍 Solana Transaction Logs");
+        console.log(error.transactionLogs.join("\n"));
+        console.groupEnd();
+      }
+    
+      // Identify specific step failure
+      toast.error(`Upload failed during step: ${currentStep || 'unknown'}`, {
+        description: error?.message || 'Unexpected error occurred',
       });
-    } finally {
+    }finally {
       setUploading(false);
       setProgress(0);
       setCurrentStep('');

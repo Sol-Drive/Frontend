@@ -2,8 +2,8 @@ import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { AnchorProvider, Program, BN } from '@coral-xyz/anchor';
 import { PublicKey, SystemProgram } from '@solana/web3.js';
 import { useMemo } from 'react';
-import { SOLDRIVE_IDL, SoldriveIDL } from '@/lib/solana/idl';
-import { PROGRAM_ID } from '@/lib/solana/config';
+import { SOLDRIVE_IDL } from '../lib/solana/idl';
+import { PROGRAM_ID } from '../lib/solana/config';
 
 export const useSoldriveProgram = () => {
   const { connection } = useConnection();
@@ -85,6 +85,12 @@ export const useSoldriveProgram = () => {
 
     // Ensure required accounts exist
     const conn = program.provider.connection;
+      const existing = await conn.getAccountInfo(fileRecordPDA);
+
+  if (existing) {
+    console.log(`File record already exists: ${fileName}`);
+    return 'already-initialized'; // skip creating again
+  }
     const [configInfo, profileInfo] = await Promise.all([
       conn.getAccountInfo(configPDA),
       conn.getAccountInfo(userProfilePDA),
