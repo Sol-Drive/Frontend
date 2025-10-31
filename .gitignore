@@ -24,7 +24,6 @@ dist-ssr
 *.sw?
 
 
-src/components/ui
 src/context
 src/hooks
 src/lib
