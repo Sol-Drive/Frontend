@@ -24,7 +24,5 @@ dist-ssr
 *.sw?
 
 
-src/hooks/useLighthouse.ts
-src/hooks/useSoldriveProgram.ts
 src/lib
 src/pages
