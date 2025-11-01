@@ -7,26 +7,60 @@ import { useSoldriveProgram } from '@/hooks/useSoldriveProgram';
 import { useLighthouse } from '@/hooks/useLighthouse';
 import { toast } from 'sonner';
 import crypto from 'crypto-js';
+import { useFileStore } from '@/hooks/useFileStoret';
 
 export const FileUpload = ({ onUploadComplete }: { onUploadComplete?: () => void }) => {
   const { publicKey } = useWallet();
   const { createFile, registerStorage, finalizeFile } = useSoldriveProgram();
   const { uploadChunked } = useLighthouse();
+  const { addFile, updateFileStatus } = useFileStore();
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [currentStep, setCurrentStep] = useState('');
+  const [currentFileId, setCurrentFileId] = useState<string | null>(null);
+
+  const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !publicKey) return;
 
+    // Prevent multiple uploads
+    if (uploading) {
+      toast.warning('Upload in progress', {
+        description: 'Please wait for the current upload to complete',
+      });
+      return;
+    }
+
     setUploading(true);
     setProgress(0);
 
+    const fileId = `${publicKey.toBase58()}-${file.name}-${Date.now()}`;
+    setCurrentFileId(fileId);
+
     try {
-      // Step 1: Calculate file hash
+      // Create temporary UI state for upload progress
+      addFile({
+        id: fileId,
+        fileName: file.name,
+        fileSize: file.size,
+        primaryStorage: '',
+        status: 'uploading',
+        isPublic: true,
+        createdAt: Date.now(),
+        owner: publicKey.toBase58(),
+      });
+
+      // Step 1: Chunking file
+      setCurrentStep('Chunking file data...');
+      setProgress(10);
+      await sleep(800);
+
+      // Step 2: Calculate file hash
       setCurrentStep('Calculating file hash...');
       setProgress(20);
+      await sleep(600);
       
       const reader = new FileReader();
       const fileBuffer = await new Promise<ArrayBuffer>((resolve) => {
@@ -40,58 +74,93 @@ export const FileUpload = ({ onUploadComplete }: { onUploadComplete?: () => void
         parseInt(hash.toString().substr(i * 2, 2), 16)
       );
 
-      // Step 2: Create file record on blockchain
-      setCurrentStep('Creating file record...');
-      setProgress(40);
+      // Step 3: Creating file record on blockchain
+      setCurrentStep('Creating file record on blockchain...');
+      setProgress(35);
+      await sleep(1000);
       
       const chunkCount = Math.ceil(file.size / (1024 * 1024));
-      await createFile(file.name, file.size, hashArray, chunkCount);
+      
+      try {
+        await createFile(file.name, file.size, hashArray, chunkCount);
+      } catch (createError: any) {
+        // Handle duplicate transaction or already processed errors
+        if (createError?.message?.includes('already been processed')) {
+          console.warn('Transaction already processed, continuing...');
+        } else {
+          throw createError;
+        }
+      }
 
-      // Step 3: Upload to IPFS via Lighthouse
-      setCurrentStep('Uploading to IPFS...');
+      // Step 4: Uploading to IPFS
+      updateFileStatus(fileId, 'processing');
+      setCurrentStep('Uploading to IPFS network...');
+      setProgress(45);
+      
       const ipfsCid = await uploadChunked(file, (p) => {
-        setProgress(40 + (p * 0.4));
+        setProgress(45 + (p * 0.3));
       });
 
-      // Step 4: Register storage location
-      setCurrentStep('Registering storage...');
-      setProgress(85);
+      // Step 5: Registering storage location
+      setCurrentStep('Registering storage location...');
+      setProgress(80);
+      await sleep(800);
       
       const merkleRoot = Array(32).fill(0);
-      await registerStorage(file.name, ipfsCid, merkleRoot);
-
-      // Step 5: Finalize file
-      setCurrentStep('Finalizing...');
-      setProgress(95);
       
-      await finalizeFile(file.name);
+      try {
+        await registerStorage(file.name, ipfsCid, merkleRoot);
+      } catch (registerError: any) {
+        if (registerError?.message?.includes('already been processed')) {
+          console.warn('Transaction already processed, continuing...');
+        } else {
+          throw registerError;
+        }
+      }
 
+      // Step 6: Finalizing file
+      setCurrentStep('Finalizing and verifying...');
+      setProgress(90);
+      await sleep(800);
+      
+      try {
+        await finalizeFile(file.name);
+      } catch (finalizeError: any) {
+        if (finalizeError?.message?.includes('already been processed')) {
+          console.warn('Transaction already processed, completing...');
+        } else {
+          throw finalizeError;
+        }
+      }
+
+      // Clear temporary UI state - data is now on blockchain
       setProgress(100);
       setCurrentStep('Complete!');
+      await sleep(500);
       
       toast.success('File uploaded successfully!', {
         description: `${file.name} is now on the blockchain`,
       });
 
+      // Remove from local store as it's now on blockchain
+      updateFileStatus(fileId, 'deleted');
+      
       onUploadComplete?.();
-    } catch (error: any) {
-      console.error("Upload error:", error);
-    
-      // Check if it’s a Solana error
-      if (error?.transactionLogs) {
-        console.group("🔍 Solana Transaction Logs");
-        console.log(error.transactionLogs.join("\n"));
-        console.groupEnd();
+    } catch (error) {
+      console.error('Upload error:', error);
+      if (currentFileId) {
+        updateFileStatus(currentFileId, 'deleted');
       }
-    
-      // Identify specific step failure
-      toast.error(`Upload failed during step: ${currentStep || 'unknown'}`, {
-        description: error?.message || 'Unexpected error occurred',
+      toast.error('Upload failed', {
+        description: error instanceof Error ? error.message : 'Unknown error',
       });
-    }finally {
+    } finally {
       setUploading(false);
       setProgress(0);
       setCurrentStep('');
+      setCurrentFileId(null);
+      // Reset file input
+      e.target.value = '';
     }
   };
 
