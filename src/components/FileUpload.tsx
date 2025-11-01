@@ -7,7 +7,7 @@ import { useSoldriveProgram } from '@/hooks/useSoldriveProgram';
 import { useLighthouse } from '@/hooks/useLighthouse';
 import { toast } from 'sonner';
 import crypto from 'crypto-js';
-import { useFileStore } from '@/hooks/useFileStoret';
+import { useFileStore } from '@/hooks/useFileStore';
 
 export const FileUpload = ({ onUploadComplete }: { onUploadComplete?: () => void }) => {
   const { publicKey } = useWallet();
