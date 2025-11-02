@@ -159,7 +159,7 @@ export const useSoldriveProgram = () => {
 
   const getUserFiles = async () => {
     if (!program || !wallet.publicKey) return [];
-
+  
     try {
       const programAccounts = program as any;
       const hasAllHelper = programAccounts?.account?.fileRecord?.all;
@@ -167,7 +167,10 @@ export const useSoldriveProgram = () => {
         console.warn('Anchor account codecs not available in IDL; skipping fetch.');
         return [];
       }
-
+  
+      // Throttle: only 1 request per 2 seconds
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+  
       const accounts = await programAccounts.account.fileRecord.all([
         {
           memcmp: {
@@ -176,13 +179,20 @@ export const useSoldriveProgram = () => {
           },
         },
       ]);
-
+  
       return accounts;
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message?.includes('429')) {
+        console.warn('Rate-limited, retrying after 2s...');
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        return getUserFiles(); // retry once
+      }
+  
       console.error('Error fetching files:', error);
       return [];
     }
   };
+  
 
   return {
     program,
